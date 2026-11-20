@@ -46,6 +46,7 @@ shots.forEach((S, i) => {
   if (S.sparks) sfx(S.s + S.sparks * S.dur, 'spark', P.spark ?? 0.3);
   if (S.title) sfx(S.s + (S.titleAt ?? 0.25), 'thud', P.title ?? 0.25);
   if (S.kind === 'final') sfx(S.e - 0.9, 'boom', P.final ?? 0.25);
+  if (S.kind === 'sail') { sfx(S.s + 0.05, 'splash', (P.water ?? 0.16)); if (S.dur > 1.4) sfx(S.s + S.dur * 0.45, 'whoosh', (P.flyby ?? 0.14)); }
   if (S.kind === 'pan') sfx(S.s + 0.05, 'cin' + (i % 3 + 1), P.pan ?? 0.12);
 });
 window.SFX = SFX;
@@ -96,8 +97,14 @@ function cam(S, u) {
     const mx = Math.max(0, (im.width * k * sc - W) / 2), my = Math.max(0, (im.height * k * sc - H) / 2);
     return { s: sc, x: clamp(-(fx - .5) * im.width * k * sc, -mx, mx), y: clamp(-(fy - .5) * im.height * k * sc, -my, my), r: lerp(S.roll ?? -1, -(S.roll ?? -1), x) * .6 };
   }
-  const m = S.move || ({ push: 'push', rise: 'rise', orbit: 'orbit', assemble: 'pull', final: 'pull' })[S.kind] || 'push';
+  const m = S.move || ({ push: 'push', rise: 'rise', orbit: 'orbit', assemble: 'pull', final: 'pull', sail: 'orbitL' })[S.kind] || 'push';
   const x = eio(u);
+  if (S.fly) { const a = S.fly[0], b = S.fly[1]; return { x: lerp(a[0], b[0], x), y: lerp(a[1], b[1], x), s: lerp(a[2], b[2], x), r: lerp(a[3] || 0, b[3] || 0, x) }; }
+  if (m === 'orbitL') return { s: lerp(1.12, 1.28, x), x: lerp(430, -430, x), y: lerp(40, -30, x), r: lerp(-7, 5, x) };
+  if (m === 'orbitR') return { s: lerp(1.12, 1.28, x), x: lerp(-430, 430, x), y: lerp(40, -30, x), r: lerp(7, -5, x) };
+  if (m === 'dive')   return { s: lerp(1.75, 1.12, x), x: lerp(120, 0, x), y: lerp(-420, 0, x), r: lerp(6, 0, x) };
+  if (m === 'chase')  return { s: lerp(0.98, 1.42, x), x: lerp(-60, 40, x), y: lerp(80, -40, x), r: lerp(-3, 2, x) };
+  if (m === 'pass')   return { s: lerp(1.38, 1.30, x), x: lerp(-380, 380, x), y: 0, r: lerp(-4, 4, x) };
   if (m === 'push')  return { s: lerp(1.06, 1.34, x), x: lerp(0, -30, x), y: lerp(20, -40, x), r: lerp(-1.5, 1.2, x) };
   if (m === 'rise')  return { s: lerp(1.55, 1.12, x), x: 0, y: lerp(380, -60, x), r: lerp(2, -1, x) };
   if (m === 'orbit') return { s: lerp(1.28, 1.18, x), x: lerp(160, -160, x), y: 0, r: lerp(-3, 3, x) };
@@ -214,6 +221,90 @@ function wrap(s, x, y, maxW, lh) {
   const lines = String(s).split('\n'); lines.forEach((l, i) => g.fillText(l, x, y + i * lh));
 }
 
+
+// ---------- SAIL: объект (кеме) теңізде жүзеді, камера айналып ұшады ----------
+// Қабаттар: _bg.jpg (объектісіз фон, экранды толық жабады, камераға қарсы жылжиды) → артқы көбік → _obj.png (кеме, ортада, тербеледі) → тұмсық шашырандысы
+// shipW — кеменің ені экран еніне қатынасы (0.9 = толық көрінеді), shipY — кеме ортасы экранның қай биіктігінде (0..1)
+function bbox(im) {
+  const w = 400, h = Math.round(400 * im.height / im.width), c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d'); x.drawImage(im, 0, 0, w, h); const d = x.getImageData(0, 0, w, h).data;
+  let x0 = w, y0 = h, x1 = 0, y1 = 0;
+  for (let y = 0; y < h; y++) for (let X = 0; X < w; X++) if (d[(y * w + X) * 4 + 3] > 120) { if (X < x0) x0 = X; if (X > x1) x1 = X; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  const k = im.width / w; return { x0: x0 * k, y0: y0 * k, x1: x1 * k, y1: y1 * k, cx: (x0 + x1) / 2 * k, cy: (y0 + y1) / 2 * k };
+}
+function shipT(S, ob, c, bob) {
+  const bb = imgs['bb:' + S.src], ref = S.shipW ?? 0.9;
+  const sk = ref * W / (bb.x1 - bb.x0) * (c.s / 1.2) * (S.shipMax ? Math.min(1, S.shipMax * H / ((bb.y1 - bb.y0) * ref * W / (bb.x1 - bb.x0))) : 1);
+  return { cx: W / 2 + c.x * 0.3, cy: H * (S.shipY ?? 0.56) + c.y * 0.3 + bob.y, sk, r: c.r + bob.r, bb };
+}
+function drawShip(ob, T, dx = 0, dy = 0, alpha = 1) {
+  g.save(); g.globalAlpha = alpha; g.translate(T.cx + dx, T.cy + dy); g.rotate(T.r * Math.PI / 180); g.scale(T.sk, T.sk);
+  g.drawImage(ob, -T.bb.cx, -T.bb.cy); g.restore();
+}
+function ptShip(im, T, fx, fy) {
+  const x = (fx * im.width - T.bb.cx) * T.sk, y = (fy * im.height - T.bb.cy) * T.sk, a = T.r * Math.PI / 180;
+  return { x: T.cx + x * Math.cos(a) - y * Math.sin(a), y: T.cy + x * Math.sin(a) + y * Math.cos(a) };
+}
+function bgCam(S, im, c, t0) {
+  const k = Math.max(W / im.width, H / im.height), hd = S.heading || [1, 0], sp = S.speed ?? 320;
+  const sc = 1 + (c.s - 1) * 0.5 + 0.22 + (S.zoomFlow || 0) * t0;
+  const mx = (im.width * k * sc - W) / 2, my = (im.height * k * sc - H) / 2;
+  return { s: sc, x: clamp(-c.x * 0.9 - hd[0] * sp * t0 + (S.bgx || 0), -mx, mx), y: clamp(c.y * 0.4 - hd[1] * sp * t0 + (S.bgy || 0), -my, my), r: c.r * 0.8 };
+}
+function foam(S, im, T, t0, pt, seed, kind) {
+  const hd = S.heading || [1, 0], sp = (S.speed ?? 320) * 1.1, R = mul(seed);
+  const E = ptShip(im, T, pt[0], pt[1]); g.save(); g.globalCompositeOperation = 'screen';
+  const N = kind === 'wake' ? 70 : 40, life = kind === 'wake' ? 1.1 : 0.55, sz = (S.foamSize || 1) * Math.min(1.6, T.sk * 2.2);
+  for (let i = 0; i < N; i++) {
+    const per = life / N, born = -life + i * per + R() * per;
+    let age = (t0 - born) % life; if (age < 0) age += life;
+    const ang = R() * Math.PI * 2, spr = (kind === 'wake' ? 60 + R() * 120 : 120 + R() * 200) * sz;
+    const x = E.x - hd[0] * sp * age * sz + Math.cos(ang) * spr * age;
+    const y = E.y - hd[1] * sp * age * sz + Math.sin(ang) * spr * age * (kind === 'wake' ? .3 : .5) - (kind === 'bow' ? (240 * age - 420 * age * age) * sz : 0);
+    const r = (kind === 'wake' ? 38 : 24) * (1 + age * 3) * sz;
+    g.globalAlpha = (1 - age / life) ** 1.4 * (kind === 'wake' ? .55 : .75);
+    g.drawImage(sprites[i % sprites.length], x - r, y - r, r * 2, r * 2);
+  }
+  g.restore();
+}
+function drawSail(S, t, c, inA, outA) {
+  const im = imgs[S.src], bg = imgs['bg:' + S.src], ob = imgs['obj:' + S.src], t0 = t - S.s;
+  // свайп-өтпе: кадр бүйірге жылдам кетеді, келесісі қарсы жақтан кіреді
+  const wd = S.whip ?? 1, wx = (outA * outA - inA * inA) * W * 0.95 * wd;
+  const cc = { ...c, x: c.x - wx / 0.9 };
+  const bob = { y: Math.sin(t0 * 2.3 + S.i) * 7, r: Math.sin(t0 * 1.7 + S.i) * 0.9 };
+  const bc = bgCam(S, im, cc, t0);
+  const T = shipT(S, ob, { ...cc, x: cc.x - wx * 0.6 / 0.3 * 0 }, bob);
+  T.cx -= wx * 1.0;                          // свайпта кеме де кадрдан шығады
+  // қозғалыс бұлыңғырлығы
+  const c2 = cam(S, clamp((t0 + 1 / 30) / S.dur)), vx = (c2.x - c.x), vy = (c2.y - c.y);
+  const wv = Math.max(inA, outA) * W * 0.18;
+  const bx = Math.abs(-vx * 0.9) + wv, sx = Math.abs(vx * 0.3) + wv;
+  const hd = S.heading || [1, 0], fl = (S.speed ?? 320) / 30;
+  const nb = Math.min(8, 2 + Math.round(bx / 12));
+  for (let j = 0; j < nb; j++) {             // фон: камера + су ағысы бойымен бұлыңғыр
+    const f = j / (nb - 1) - .5;
+    drawImg(bg, { ...bc, x: bc.x + bx * f * Math.sign(vx || 1) + hd[0] * fl * f * 2, y: bc.y + hd[1] * fl * f * 2 }, j === 0 ? 1 : 0.3);
+  }
+  // кемені суға «отырғызу»: астына жұмсақ көлеңке
+  const bb = T.bb, wl = (S.waterline ?? 0.97), bw = (bb.x1 - bb.x0) * T.sk;
+  const sy = T.cy + (bb.y0 + (bb.y1 - bb.y0) * wl - bb.cy) * T.sk;
+  g.save(); g.translate(T.cx, sy); g.scale(1, 0.16);
+  const sg = g.createRadialGradient(0, 0, 0, 0, 0, bw * .55); sg.addColorStop(0, 'rgba(0,15,30,.45)'); sg.addColorStop(1, 'rgba(0,15,30,0)');
+  g.fillStyle = sg; g.fillRect(-bw, -bw, bw * 2, bw * 2); g.restore();
+  if (S.stern) foam(S, im, T, t0, S.stern, 300 + S.i, 'wake');
+  const ns = Math.min(6, 1 + Math.round(sx / 14));
+  for (let j = 0; j < ns; j++) { const f = ns > 1 ? j / (ns - 1) - .5 : 0; drawShip(ob, T, sx * f * Math.sign(vx || 1), 0, j === 0 ? 1 : 0.35); }
+  // су сызығы бойындағы көбік
+  if (S.waterFoam !== false) { const R = mul(900 + S.i); g.save(); g.globalCompositeOperation = 'screen';
+    for (let i = 0; i < 16; i++) { const fx = R(), x = T.cx + (bb.x0 + (bb.x1 - bb.x0) * fx - bb.cx) * T.sk, ph = R() * 6;
+      const r = (26 + R() * 30) * Math.min(1.5, T.sk * 2) * (1 + .25 * Math.sin(t0 * 7 + ph));
+      g.globalAlpha = .5 + .25 * Math.sin(t0 * 5 + ph); g.drawImage(sprites[i % sprites.length], x - r * 1.6, sy - r * .55, r * 3.2, r * 1.1); }
+    g.restore(); }
+  if (S.bow) foam(S, im, T, t0, S.bow, 500 + S.i, 'bow');
+  if (S.bow2) foam(S, im, T, t0, S.bow2, 700 + S.i, 'bow');
+}
+
 // ---------- кадр ----------
 function shake(t) {
   let a = 0;
@@ -238,7 +329,9 @@ function frame(t) {
   const blur = Math.max(inA, outA);
   c = { ...c, s: c.s * (1 + outA * outA * 0.35) * (1 + inA * inA * 0.18) };
 
-  if (S.kind === 'assemble') {
+  if (S.kind === 'sail') {
+    drawSail(S, t, c, inA, outA);
+  } else if (S.kind === 'assemble') {
     // 1) бос алаң  2) каркас төменнен жоғары өседі  3) қабаттар жоғарыдан түседі
     const k = Math.max(W / im.width, H / im.height);
     const plate = imgs['plate:' + S.src], edge = imgs['edge:' + S.src];
@@ -283,6 +376,12 @@ window.READY = (async () => {
   for (const S of shots) if (!imgs[S.src]) {
     const im = await load(S.src); if (!im) throw new Error('Сурет табылмады: ' + S.src);
     imgs[S.src] = im; imgs['edge:' + S.src] = edgesOf(im); imgs['plate:' + S.src] = plateOf(im);
+    if (S.kind === 'sail') {
+      const b = S.src.replace(/\.(jpe?g|png)$/i, '');
+      imgs['obj:' + S.src] = await load(S.obj || b + '_obj.png'); imgs['bg:' + S.src] = await load(S.bg || b + '_bg.jpg');
+      if (!imgs['obj:' + S.src] || !imgs['bg:' + S.src]) throw new Error('cutout.py іске қосылмаған: ' + S.src);
+      imgs['bb:' + S.src] = bbox(imgs['obj:' + S.src]);
+    }
   }
   frame(0); return true;
 })();
