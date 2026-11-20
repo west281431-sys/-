@@ -1,0 +1,28 @@
+<!doctype html>
+<!-- FPV Assemble: фотолардан «өзі құрастырылып жатқан» FPV-ролик. Тек CONFIG-ті өзгертіңіз. -->
+<html><head><meta charset="utf-8">
+<style>
+  @font-face { font-family: Inter; src: url(a/Inter.ttf); font-weight: 100 900; }
+  html, body { margin: 0; background: #000; overflow: hidden; }
+  canvas { display: block; width: 1080px; height: 1920px; }
+</style></head>
+<body>
+<canvas id="c"></canvas>
+<script>
+window.CONFIG = {
+  palette: 'dust',          // dust — шаң/топырақ · spray — теңіз шашырандысы · smoke — түтін · snow — қар
+  transition: 0.22,         // өтпе ұзақтығының жартысы
+  shots: [
+    // kind: push — алға ұшу · rise — төменнен көтерілу · orbit — бүйірден айналу · assemble — қабаттап құрастыру · final — соңғы жалпы план
+    { src: 'media/photos/1.jpg', kind: 'rise',     dur: 1.6 },
+    { src: 'media/photos/2.jpg', kind: 'push',     dur: 1.3 },
+    { src: 'media/photos/3.jpg', kind: 'assemble', dur: 2.8, strips: 6, sparks: 0.55 },
+    { src: 'media/photos/4.jpg', kind: 'orbit',    dur: 1.4 },
+    { src: 'media/photos/5.jpg', kind: 'push',     dur: 1.2 },
+    { src: 'media/photos/6.jpg', kind: 'assemble', dur: 2.6, strips: 5 },
+    { src: 'media/photos/7.jpg', kind: 'final',    dur: 2.4, title: 'ТАҚЫРЫП', sub: 'кіші жол', titleAt: 0.5 },
+  ],
+};
+</script>
+<script src="engine.js"></script>
+</body></html>
