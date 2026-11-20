@@ -46,6 +46,7 @@ shots.forEach((S, i) => {
   if (S.sparks) sfx(S.s + S.sparks * S.dur, 'spark', P.spark ?? 0.3);
   if (S.title) sfx(S.s + (S.titleAt ?? 0.25), 'thud', P.title ?? 0.25);
   if (S.kind === 'final') sfx(S.e - 0.9, 'boom', P.final ?? 0.25);
+  if (S.kind === 'pan') sfx(S.s + 0.05, 'cin' + (i % 3 + 1), P.pan ?? 0.12);
 });
 window.SFX = SFX;
 
@@ -88,6 +89,13 @@ function plateOf(im) {
 // ---------- камера ----------
 // әр сахна түріне өз қозғалысы: push — алға ұшу, rise — төменнен көтерілу, orbit — бүйірден айналу, assemble/final — артқа шегіну
 function cam(S, u) {
+  if (S.kind === 'pan' || S.from) {
+    const im = imgs[S.src], k = Math.max(W / im.width, H / im.height);
+    const a = S.from || [.5, .5, 1.1], b = S.to || a, x = eio(u);
+    const sc = lerp(a[2] ?? 1.1, b[2] ?? 1.1, x), fx = lerp(a[0], b[0], x), fy = lerp(a[1], b[1], x);
+    const mx = Math.max(0, (im.width * k * sc - W) / 2), my = Math.max(0, (im.height * k * sc - H) / 2);
+    return { s: sc, x: clamp(-(fx - .5) * im.width * k * sc, -mx, mx), y: clamp(-(fy - .5) * im.height * k * sc, -my, my), r: lerp(S.roll ?? -1, -(S.roll ?? -1), x) * .6 };
+  }
   const m = S.move || ({ push: 'push', rise: 'rise', orbit: 'orbit', assemble: 'pull', final: 'pull' })[S.kind] || 'push';
   const x = eio(u);
   if (m === 'push')  return { s: lerp(1.06, 1.34, x), x: lerp(0, -30, x), y: lerp(20, -40, x), r: lerp(-1.5, 1.2, x) };
