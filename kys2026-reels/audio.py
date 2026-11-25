@@ -88,14 +88,28 @@ def riser(d):
 add(riser(1.4), 0.2, 0.35); add(riser(1.0), fin - 1.0, 0.35)
 
 # ---------- СИРЕНА ----------
-def siren(d, period=0.8, f0=620, f1=1350):
-    tt_ = tt(d); ph = (tt_ % period) / period
-    f = f0 + (f1 - f0) * (0.5 - 0.5 * np.cos(2*np.pi*ph))
-    x = np.sin(2*np.pi*np.cumsum(f)/SR); x = np.tanh(2.5 * x) + 0.3 * np.sin(4*np.pi*np.cumsum(f)/SR)
-    e = np.minimum(1, tt_/0.08) * np.clip((d - tt_)/0.25, 0, 1)
-    return x * e
-add(siren(1.75), 0.0, 0.16)
-add(siren(1.4, 0.35, 700, 1500), fin, 0.12)
+def civil_siren(d, up=1.3, hold=1.2, fmax=440.0, fmin=110.0):
+    """«Жалпы дабыл» — электромеханикалық сирена: айналып көтеріледі, созылады, баяу басылады.
+    Екі ротор (терц аралығы ~1.2), бай гармоника, қаланың жаңғырығы."""
+    t_ = tt(d)
+    rise = fmin + (fmax - fmin) * (1 - np.exp(-t_ / (up / 3)))
+    fall_t = np.clip(t_ - (up + hold), 0, None)
+    f = np.where(t_ < up + hold, rise, fmin + (rise - fmin) * np.exp(-fall_t / 1.6))
+    f = f * (1 + 0.004 * np.sin(2*np.pi*5.5*t_))
+    out = np.zeros_like(t_)
+    for ratio, g in ((1.0, 1.0), (1.2, 0.8)):
+        ph = 2*np.pi*np.cumsum(f * ratio)/SR
+        out += g * sum(np.sin(k*ph) / k**1.15 for k in range(1, 9))
+    out = np.tanh(1.4 * out)
+    amp = np.clip(f / fmax, 0, 1) ** 1.2
+    out *= amp * np.minimum(1, t_/0.05) * np.clip((d - t_)/0.4, 0, 1)
+    out += 0.05 * amp * lp(rng.standard_normal(len(t_)), 0.2)   # ауа ағыны
+    wet = np.zeros_like(out)
+    for dl, g in ((0.07, 0.45), (0.13, 0.35), (0.21, 0.28), (0.34, 0.2), (0.52, 0.13)):
+        k = int(dl*SR); wet[k:] += g * out[:-k]
+    return lp(out + wet, 0.35)
+add(civil_siren(4.8, up=1.4, hold=1.0), 0.0, 0.30)          # хук: 0-ден көтеріліп, титрден кейін басылады
+add(civil_siren(3.6, up=0.9, hold=1.2), fin, 0.17)          # финал
 
 # ---------- «ТЫРРРТ» — айналатын цифрлар ----------
 def roll(t0, d, g=0.5, rate=38):
