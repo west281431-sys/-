@@ -1,0 +1,284 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+@font-face{font-family:IB;src:url(file:///usr/share/fonts/opentype/inter/Inter-Black.otf)}
+@font-face{font-family:IX;src:url(file:///usr/share/fonts/opentype/inter/Inter-ExtraBold.otf)}
+@font-face{font-family:MO;src:url(file:///usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf)}
+html,body{margin:0;background:transparent}
+canvas{display:block}
+</style></head><body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<canvas id="b" width="1080" height="1920" style="display:none"></canvas>
+<script>
+// Тактикалық HUD оверлейі «ҚЫС-2026». draw(t) — бір кадр (мөлдір фонмен).
+const W=1080,H=1920;
+const OR='#F2A33A', CY='#86D8EC', RD='#FF3B30', BL='#2F7BFF', WH='#FFFFFF';
+const c=document.getElementById('c'), X=c.getContext('2d');
+const B=document.getElementById('b'), BX=B.getContext('2d');
+let T=null; // timeline
+const SCR='0123456789ҚЫСӨҢҒҰҮАЕ#/%';
+function hash(n){n=Math.sin(n*127.1+311.7)*43758.5453;return n-Math.floor(n)}
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const ease=p=>1-Math.pow(1-cl(p),3);
+function scr(txt,p,seed){ // «тырррт» — әріптер кездейсоқ айналып, солдан оңға қарай орнына түседі
+  if(p>=1) return txt; if(p<=0) return '';
+  let o='';const n=txt.length;
+  for(let i=0;i<n;i++){
+    const ch=txt[i]; const set=i/n*0.75;
+    if(ch===' '){o+=' ';continue}
+    if(p<set*0.6) {o+=' ';continue}
+    if(p<set+0.25) o+=SCR[Math.floor(hash(seed+i*7.3+Math.floor(p*90))*SCR.length)];
+    else o+=ch;
+  }
+  return o;
+}
+function typ(txt,p){p=cl(p);const k=Math.floor(txt.length*p);return txt.slice(0,k)+(p<1&&p>0?'▌':'')}
+function txt(s,x,y,font,col,align='left',a=1,ls=0){
+  X.save();X.globalAlpha*=a;X.font=font;X.fillStyle=col;X.textAlign=align;X.textBaseline='alphabetic';
+  if(ls) X.letterSpacing=ls+'px';
+  X.fillText(s,x,y);X.restore();
+}
+function fitSize(s,font,maxW,maxS){X.font=maxS+'px '+font;const w=X.measureText(s).width;return Math.min(maxS,Math.floor(maxS*maxW/w))}
+function tc(t){const f=Math.floor((t%1)*30),s=Math.floor(t)%60,m=Math.floor(t/60);
+  return '06:'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')+':'+String(f).padStart(2,'0')}
+
+function hud(t,a=1){
+  X.save();X.globalAlpha=a;
+  // бұрыш жақшалары
+  X.strokeStyle='rgba(255,255,255,0.85)';X.lineWidth=4;
+  const m=44,L=74;
+  [[m,m,1,1],[W-m,m,-1,1],[m,H-m,1,-1],[W-m,H-m,-1,-1]].forEach(([x,y,sx,sy])=>{
+    X.beginPath();X.moveTo(x,y+sy*L);X.lineTo(x,y);X.lineTo(x+sx*L,y);X.stroke();});
+  // REC
+  if(Math.floor(t*2)%2===0){X.fillStyle=RD;X.beginPath();X.arc(88,104,11,0,7);X.fill();}
+  txt('REC',110,115,'30px MO',WH);
+  txt(tc(t),W-82,112,'30px MO',CY,'right');
+  txt('24.11.2026',W-82,150,'26px MO',WH,'right',0.7);
+  txt('ТЖД МАҢҒЫСТАУ  //  АЗАМАТТЫҚ ҚОРҒАУ',86,H-70,'24px MO',OR,'left',0.85);
+  X.restore();
+}
+function strobe(t,k){ // қызыл/көк сирена жарығы шеттерде
+  const ph=Math.floor(t/0.16)%2;
+  const g1=X.createLinearGradient(0,0,330,0);
+  g1.addColorStop(0,ph?'rgba(255,40,40,'+(0.75*k)+')':'rgba(255,40,40,'+(0.12*k)+')');g1.addColorStop(1,'rgba(255,40,40,0)');
+  X.fillStyle=g1;X.fillRect(0,0,330,H);
+  const g2=X.createLinearGradient(W,0,W-330,0);
+  g2.addColorStop(0,!ph?'rgba(40,110,255,'+(0.8*k)+')':'rgba(40,110,255,'+(0.12*k)+')');g2.addColorStop(1,'rgba(40,110,255,0)');
+  X.fillStyle=g2;X.fillRect(W-330,0,330,H);
+}
+function scanlines(a){X.fillStyle='rgba(0,0,0,'+a+')';for(let y=0;y<H;y+=4)X.fillRect(0,y,W,1.5)}
+function vignette(a){const g=X.createRadialGradient(W/2,H/2,H*0.25,W/2,H/2,H*0.75);
+  g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,'+a+')');X.fillStyle=g;X.fillRect(0,0,W,H)}
+function flash(p,a=1){if(p<0||p>1)return;X.fillStyle='rgba(255,255,255,'+(a*(1-p)*(1-p))+')';X.fillRect(0,0,W,H)}
+function radar(t,cx,cy,r,a){
+  X.save();X.globalAlpha=a;X.strokeStyle='rgba(134,216,236,0.75)';X.lineWidth=2.5;
+  for(const k of [1,0.66,0.33]){X.beginPath();X.arc(cx,cy,r*k,0,7);X.stroke()}
+  X.beginPath();X.moveTo(cx-r,cy);X.lineTo(cx+r,cy);X.moveTo(cx,cy-r);X.lineTo(cx,cy+r);X.stroke();
+  const ang=t*5.5;
+  for(let i=0;i<26;i++){const a2=ang-i*0.03;X.fillStyle='rgba(134,216,236,'+(0.32*(1-i/26))+')';
+    X.beginPath();X.moveTo(cx,cy);X.arc(cx,cy,r,a2-0.03,a2);X.closePath();X.fill()}
+  const bl=[[0.3,-0.5],[-0.45,0.2],[0.55,0.35],[-0.2,-0.3],[0.1,0.6],[-0.6,-0.55],[0.7,-0.15]];
+  bl.forEach(([bx,by],i)=>{const show=cl((a*1.4)-i*0.12);if(show<=0)return;
+    X.fillStyle=OR;X.globalAlpha=a*show*(0.6+0.4*Math.sin(t*12+i));X.beginPath();X.arc(cx+bx*r,cy+by*r,9,0,7);X.fill()});
+  X.restore();
+}
+function glitchCopy(k,seed){ // кадрды тілімдеп жылжыту
+  BX.clearRect(0,0,W,H);BX.drawImage(c,0,0);X.clearRect(0,0,W,H);
+  let y=0,i=0;
+  while(y<H){const h=20+Math.floor(hash(seed+i)*140);const dx=(hash(seed+i*3.1)-0.5)*k*260;
+    X.drawImage(B,0,y,W,h,dx,y,W,h);y+=h;i++}
+}
+
+// ---------- ХУК 0–4 с ----------
+function hook(t){
+  const titleAt=1.6;
+  // қараңғы тонировка (артында Ақтау жиналысы көрініп тұрады)
+  const tint=t<titleAt?0.42:0.66;
+  X.fillStyle='rgba(5,12,22,'+tint+')';X.fillRect(0,0,W,H);
+  vignette(0.6);scanlines(0.12);
+  if(t<titleAt+0.25) strobe(t,t<titleAt?1:cl(1-(t-titleAt)/0.25));
+  hud(t);
+  // жоғарғы мәтіндер
+  const preA=t<titleAt?1:cl(1-(t-titleAt)/0.12);
+  if(preA>0){
+    txt(scr('ОБЛЫСТЫҚ КОМАНДАЛЫҚ-ШТАБТЫҚ',(t-0.05)/0.45,11),86,330,'38px MO',OR,'left',preA);
+    txt(scr('ОҚУ-ЖАТТЫҒУ',(t-0.2)/0.35,23),86,378,'38px MO',OR,'left',preA);
+    txt(scr('МАҢҒЫСТАУ ОБЛЫСЫ',(t-0.4)/0.35,37),86,446,'34px MO',WH,'left',preA);
+    txt(scr('43.65°N   51.16°E',(t-0.55)/0.4,53),86,492,'34px MO',CY,'left',preA);
+    radar(t,540,900,230,cl((t-0.35)/0.4)*preA);
+    // таймер (кері санақ)
+    const rem=Math.max(0,titleAt-t);
+    const s=Math.floor(rem),cs=Math.floor((rem-s)*100);
+    const col=rem<0.6?RD:WH;
+    X.save();X.shadowColor=col;X.shadowBlur=24;
+    txt('T−00:0'+s+'.'+String(cs).padStart(2,'0'),540,1330,'120px MO',col,'center',preA);X.restore();
+    txt('ДАБЫЛ  //  ЖАРИЯЛАНДЫ',540,1400,'30px MO',RD,'center',preA*(Math.floor(t*6)%2?1:0.35),4);
+  }
+  // «ҚЫС-2026»
+  if(t>=titleAt){
+    const p=(t-titleAt);
+    const sc=1+0.18*(1-ease(p/0.25));
+    const shake=p<0.3?(hash(Math.floor(t*30))-0.5)*18*(1-p/0.3):0;
+    const tfs=fitSize('ҚЫС-2026','IB',950,210);
+    X.save();X.translate(540+shake,880);X.scale(sc,sc);
+    X.shadowColor='rgba(170,225,255,0.95)';X.shadowBlur=46;
+    txt(scr('ҚЫС-2026',p/0.35,71),0,0,tfs+'px IB',WH,'center');
+    X.shadowBlur=0;txt(scr('ҚЫС-2026',p/0.35,71),0,0,tfs+'px IB',WH,'center');
+    X.restore();
+    txt(typ('КОМАНДАЛЫҚ-ШТАБТЫҚ ОҚУ-ЖАТТЫҒУ',(p-0.2)/0.3),540,968,'36px MO',OR,'center');
+    // чиптер
+    const chips=[['24–25','ҚАРАША'],['7','ӨҢІР'],['2','КҮН']];
+    const cw=290,ch=160,gap=30,x0=(W-(3*cw+2*gap))/2,y0=1040;
+    chips.forEach(([n,l],i)=>{
+      const q=t-(titleAt+0.55+i*0.3); if(q<0)return;
+      const a=ease(q/0.12);
+      X.save();X.globalAlpha=a;
+      const x=x0+i*(cw+gap);
+      X.fillStyle='rgba(8,18,30,0.55)';X.fillRect(x,y0,cw,ch);
+      X.strokeStyle=OR;X.lineWidth=3;X.strokeRect(x,y0,cw,ch);
+      let num=n; if(q<0.25){num=n.replace(/[0-9]/g,(d,j)=>String(Math.floor(hash(i*9+j+Math.floor(t*60))*10)));}
+      txt(num,x+cw/2,y0+98,'86px IB',WH,'center');
+      txt(l,x+cw/2,y0+140,'28px MO',OR,'center',1,3);
+      X.restore();
+    });
+    flash(p/0.28,0.95);
+  }
+  txt('●  АҚТАУ ҚАЛАСЫ  //  ОБЛЫСТЫҚ ШТАБ',86,1560,'30px MO',WH,'left',cl(t/0.3)*0.95);
+}
+
+// ---------- Өңір кезеңі ----------
+function region(t,R,ri,tr,tag){
+  const lt=t-R.start, rend=R.start+R.dur;
+  // төменгі қараңғы жолақ — атау оқылсын
+  const g=X.createLinearGradient(0,1150,0,H);g.addColorStop(0,'rgba(4,10,18,0)');g.addColorStop(0.45,'rgba(4,10,18,0.55)');g.addColorStop(1,'rgba(4,10,18,0.8)');
+  X.fillStyle=g;X.fillRect(0,1150,W,H-1150);
+  const gt=X.createLinearGradient(0,0,0,260);gt.addColorStop(0,'rgba(4,10,18,0.55)');gt.addColorStop(1,'rgba(4,10,18,0)');
+  X.fillStyle=gt;X.fillRect(0,0,W,260);
+  vignette(0.45);scanlines(0.06);
+  hud(t);
+  // жоғарыдағы белгі: штаб / далалық жұмыс
+  txt(tag==='m'?'●  ШТАБ ЖИНАЛЫСЫ':'●  ДАЛАЛЫҚ ЖҰМЫС',88,200,'28px MO',tag==='m'?OR:CY,'left',0.95,2);
+  // атау
+  const fs=fitSize(R.n1,'IB',900,150);
+  const yN=1450;
+  X.save();X.shadowColor='rgba(0,0,0,0.7)';X.shadowBlur=18;
+  txt(scr(R.n1,lt/0.42,ri*101+5),80,yN,fs+'px IB',WH);
+  X.restore();
+  txt(typ(R.n2,(lt-0.25)/0.25),84,yN+62,'44px MO',OR,'left',1,8);
+  const lw=900*ease(lt/0.3);
+  X.fillStyle=OR;X.fillRect(80,yN+88,lw,6);
+  X.fillStyle='rgba(242,163,58,0.35)';X.fillRect(80+lw,yN+90,Math.max(0,900-lw)*0,2);
+}
+
+function finale(t){
+  const p=t-T.finale;
+  const bg=X.createRadialGradient(W/2,H*0.48,50,W/2,H*0.5,H*0.8);
+  bg.addColorStop(0,'#0d1b2c');bg.addColorStop(1,'#03060b');
+  X.fillStyle=bg;X.fillRect(0,0,W,H);
+  for(let i=0;i<140;i++){X.fillStyle='rgba(255,255,255,'+(0.15+0.5*hash(i*3.3))+')';X.fillRect(hash(i)*W,hash(i+500)*H,2,2)}
+  scanlines(0.1);
+  if(p<1.6) strobe(t,p<1.2?1:cl(1-(p-1.2)/0.4));
+  hud(t);
+  txt(typ('ТӨТЕНШЕ ЖАҒДАЙ БОЛСА',p/0.4),540,640,'44px MO',OR,'center',1,3);
+  const q=p-0.25;
+  if(q>0){
+    let s='112'; if(q<0.55) s=s.replace(/[0-9]/g,(d,j)=>String(Math.floor(hash(j*13+Math.floor(t*60))*10)));
+    const sc=q<0.55?1:1+0.1*(1-ease((q-0.55)/0.25));
+    const pulse=q>0.8?0.5+0.5*Math.sin((q-0.8)*7):1;
+    X.save();X.translate(540,1060);X.scale(sc,sc);
+    X.shadowColor='rgba(255,59,48,'+(0.7+0.3*pulse)+')';X.shadowBlur=70;
+    txt(s,0,0,'440px IB',WH,'center');X.shadowBlur=0;txt(s,0,0,'440px IB',WH,'center');
+    X.restore();
+    if(q>0.55) flash((q-0.55)/0.3,0.85);
+  }
+  txt(typ('ҚОҢЫРАУ ШАЛЫҢЫЗ',(p-1.0)/0.35),540,1170,'48px MO',WH,'center',1,4);
+  const r=p-1.4;
+  if(r>0){
+    const a=ease(r/0.2);const w=640,h=120,x=(W-w)/2,y=1290;
+    X.save();X.globalAlpha=a;X.strokeStyle=WH;X.lineWidth=4;X.fillStyle='rgba(255,59,48,0.18)';
+    X.beginPath();X.roundRect(x,y,w,h,60);X.fill();X.stroke();
+    txt(typ('@112mangystau',r/0.45),540,y+80,'60px IX',WH,'center');
+    X.restore();
+  }
+  // соңғы 0.3 с — қараңғыға
+  const end=T.dur-0.3; if(t>end){X.fillStyle='rgba(0,0,0,'+cl((t-end)/0.3)+')';X.fillRect(0,0,W,H)}
+}
+
+function draw(t){
+  X.clearRect(0,0,W,H);X.globalAlpha=1;
+  if(t>=T.finale){finale(t);
+    if(t-T.finale<0.12) {flash((t-T.finale)/0.12,0.9)}
+    return}
+  if(t<T.hookEnd){hook(t);
+    const g=t-(T.hookEnd-0.3); if(g>0) glitchCopy(g/0.3*1.2,Math.floor(t*30));
+    return}
+  const regs=T.regions; let ri=0;
+  for(let i=0;i<regs.length;i++) if(t>=regs[i].start) ri=i;
+  const R=regs[ri];
+  // қай кадр (штаб/дала)
+  let acc=R.start,tag='f';for(const s of R.shots){if(t>=acc) tag=s[2];acc+=s[1]}
+  const Rr=Object.assign({},R); Rr.start=ri===0?T.hookEnd:R.start+0.2; // атау өтпе ашылғанда шығады
+  region(t,Rr,ri,0,tag);
+  CARDS.forEach(cd=>card(t,cd));
+  const lt=t-Rr.start;
+  if(ri===0){ if(lt<0.2) glitchCopy((1-lt/0.2)*0.8,Math.floor(t*30)); if(lt<0.18) flash(lt/0.18,0.6); }
+  // өңірлер арасындағы тактикалық өтпе
+  for(let i=1;i<regs.length;i++){const u=(t-regs[i].start)/0.28; if(u>-1&&u<1) wipe(u,regs[i],i,t)}
+}
+// Мәтіннен алынған сөздер (брифинг-карточка)
+const CARDS=[
+  {a:6.0,b:9.6,h:'ОҚУ-ЖАТТЫҒУ МАҚСАТЫ',l:['Қысқы кезеңдегі төтенше','жағдайларға ден қоюға','дайындық']},
+  {a:16.2,b:19.9,h:'ТЕКСЕРІЛЕДІ',l:['Құлақтандыру жүйесі мен','жедел штабтардың жұмысы']},
+  {a:30.0,b:33.2,h:'ДАЙЫНДЫҚ',l:['Табиғи және техногендік','ТЖ-ға жедел ден қою']},
+  {a:42.0,b:45.3,h:'ҚҰРМЕТТІ ТҰРҒЫНДАР!',l:['Сабыр мен түсіністігіңізге','рахмет!']},
+];
+function card(t,cd){
+  if(t<cd.a||t>cd.b) return;
+  const p=t-cd.a, out=cd.b-t;
+  const a=Math.min(ease(p/0.2),cl(out/0.2));
+  const x=70,y=270,w=860,lh=66,h=96+cd.l.length*lh;
+  const slide=(1-ease(p/0.25))*-60;
+  X.save();X.globalAlpha=a;X.translate(slide,0);
+  X.fillStyle='rgba(6,14,24,0.72)';X.fillRect(x,y,w,h);
+  X.fillStyle=OR;X.fillRect(x,y,8,h);
+  X.strokeStyle='rgba(242,163,58,0.6)';X.lineWidth=2;X.strokeRect(x,y,w,h);
+  txt('◆ '+scr(cd.h,p/0.35,cd.a*7),x+40,y+56,'30px MO',OR,'left',1,3);
+  const full=cd.l.join('\n');const k=Math.floor(full.length*cl((p-0.2)/0.9));
+  let shown=full.slice(0,k).split('\n');
+  shown.forEach((s,i)=>txt(s,x+40,y+60+lh*(i+1),'50px IX',WH));
+  X.restore();
+}
+function wipe(u,R,i,t){ // u: -1..0 жабылады, 0..1 ашылады
+  const cover=u<0?ease(u+1):1-ease(u);
+  const n=9,bh=H/n;
+  for(let k=0;k<n;k++){
+    const dir=k%2?1:-1, d=(k*0.04);
+    const cv=cl(cover*1.4-d);
+    const w=W*cv; const x=dir>0?0:W-w;
+    X.fillStyle='rgba(6,13,22,0.97)';X.fillRect(x,k*bh,w,bh+1);
+    X.fillStyle=OR;X.fillRect(dir>0?x+w-6:x,k*bh,6,bh+1);
+  }
+  if(cover>0.85){
+    const a=cl((cover-0.85)/0.15);
+    X.save();X.globalAlpha=a;
+    // нысана (радар/прицел)
+    X.strokeStyle='rgba(134,216,236,0.85)';X.lineWidth=3;
+    const cx=540,cy=860;
+    X.beginPath();X.arc(cx,cy,170,0,7);X.stroke();X.beginPath();X.arc(cx,cy,90,0,7);X.stroke();
+    X.beginPath();X.moveTo(cx-240,cy);X.lineTo(cx-120,cy);X.moveTo(cx+120,cy);X.lineTo(cx+240,cy);
+    X.moveTo(cx,cy-240);X.lineTo(cx,cy-120);X.moveTo(cx,cy+120);X.lineTo(cx,cy+240);X.stroke();
+    const ang=t*7;X.fillStyle='rgba(134,216,236,0.3)';X.beginPath();X.moveTo(cx,cy);X.arc(cx,cy,170,ang-0.6,ang);X.closePath();X.fill();
+    X.fillStyle=OR;X.beginPath();X.arc(cx+40,cy-30,10,0,7);X.fill();
+    const pp=(u+1)/1.6;
+    const fs=fitSize(R.n1,'IB',900,120);
+    txt(scr(R.n1,pp,i*31),540,1230,fs+'px IB',WH,'center');
+    txt(scr(R.co,pp,i*17+3),540,1300,'34px MO',CY,'center');
+    txt('НЫСАН  //  '+R.n2,540,1085,'28px MO',OR,'center',1,4);
+    X.restore();
+  }
+  if(Math.abs(u)<0.12) flash(Math.abs(u)/0.12,0.5);
+}
+window.setup=(tl)=>{T=tl;T.regions.forEach(r=>r.dur=r.shots.reduce((a,s)=>a+s[1],0));};
+window.draw=draw;
+window.frame=(t)=>{draw(t);return c.toDataURL('image/png')};
+</script></body></html>
